@@ -8,4 +8,6 @@ Another small change.
 
 Moved building pages to pre-push hook.
 
+Testing image loading again.
+
 <img src='figure/cats-in-numbered-boxes.jpg'></img>
