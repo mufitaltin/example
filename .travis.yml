@@ -1,0 +1,11 @@
+language: node_js
+node_js:
+- '0.10'
+script: npm run-script deploy
+branches:
+  only:
+  - master
+env:
+  global:
+  - GH_REF: github.com/ramnathv/example.git
+  - secure: Fs+9yLop1MEIFNENvMBv/w1IN2+KvLxTJRyA+6LbiLOJFuoAOvhvPbYJ7+1CsaFDbny0L4qiXHF49gQtYW9oV1qJoaiaSfp5JG44S9ng9BSibn4l9R/86yAHMvh74LsbLiJGnoMHfyuKYsXAU2b5JbjJfsV0ECXDzMpUF79Ml18=
