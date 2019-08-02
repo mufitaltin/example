@@ -1,0 +1,159 @@
+# How rCharts Works?
+
+\`\`\`{r setup, echo = F, cache = F, message = F} require\(knitr\) opts\_chunk$set\(results = 'asis', comment = NA, tidy = F, message = F\) library\(rCharts\)
+
+```text
+> **Note** This is a multi-part series on how rCharts works. My objective is to show you how easy it is to integrate a javascript visualization library into rCharts, and take advantage of a single-unified interface and other functionalities. 
+
+In this tutorial, I will go over the steps to integrate [uvCharts](http://imaginea.github.io/uvCharts/), a new-entrant to the rapidly expanding set of wrapper libraries to [d3js](http://d3js.org). Specifically, we will recreate this barchart, which was created using uvCharts.
+
+
+<iframe style="width: 100%; height: 600px" src="http://jsfiddle.net/RR8Ub/1/embedded/result,resources,js,html" seamless frameBorder="0">
+</iframe>
+
+Browse through the `resources`, `javascript` and `html` tabs in the jsFiddle to get a sense of how the chart works.  rCharts will need to create each of these sections, and we will go through them one by one.
+
+### Resources
+
+The resources required by a chart include the external javascript `<script src = "...js">` and css files `<link href="...css" rel="stylesheet">` that are included either in the head of the html document or at the end. rCharts uses a convention over configuration approach, and so the resources are specified using a `config.yml` file as shown below.
+
+The [config](libraries/widgets/uvcharts/config.yml) file basically provides paths to the js/css files, both locally and  online from a cdn. The `jshead` key specifies that these js files need to be included in the head of the document.
+
+```yaml
+uvcharts:
+  jshead: [js/d3.v3.min.js, js/uvcharts.js]
+  cdn:
+    jshead:
+      - "http://cdnjs.cloudflare.com/ajax/libs/d3/3.2.2/d3.v3.min.js"
+      - "http://imaginea.github.io/uvCharts/js/uvcharts.js"
+```
+
+At this point, the `uvCharts` library folder will look like this
+
+* js
+  * d3.v3.min.js
+  * uvcharts.js
+* config.yml
+
+## Javascript
+
+Our next step is to split the javascript for the chart into a [mustache](http://mustache.github.io/) layout, and then populate it using a `json` payload processed by R.
+
+By default, `rCharts` bundles all data and parameters into a single json variable `chartParams`. In addition to `chartParams`, it also sends `chartId` to the layout. So, we begin by replacing all data in the javascript with a placeholder `{{{ chartParams }}}`. rCharts uses the `whisker` package to replace `{{{ chartParams }}}` with the json payload.
+
+### Layout
+
+```markup
+<script>
+  var graphdef = {{{ chartParams }}}
+  var config = {
+    meta: {
+      position: "#{{ chartId }}"
+    }
+  }
+  var chart = uv.chart(graphdef.type, graphdef, config)
+</script>
+```
+
+Following rCharts conventions, we save this layout to `layouts/chart.html`. At this point our [uvCharts](https://github.com/mufitaltin/example/tree/43aeb3989e480a7643791dff84b0b225a1fde656/chapter2/libraries/widgets/uvCharts/README.md) library folder is going to look like this
+
+* js
+  * d3.v3.min.js
+  * uvcharts.js
+* layouts
+  * chart.html
+* config.yml
+
+### Payload
+
+Different d3js wrapper libraries tend to use different data structures. Our goal with `rCharts` is to provide a single-unified interface for specifying a chart, so that a user does not need to worry about the underlying format used by a specific library. This can be easily achieved by writing functions that transform data \(usually a `data.frame`\) to different formats, as required by the library.
+
+Shown below is the dataset that we will be working with. We need to convert it into an R object, that when converted to JSON will look like the object `dataset` seen in the `javascript` shown above.
+
+\`\`\`{r results='markup'} hair\_eye\_male &lt;- subset\(as.data.frame\(HairEyeColor\), Sex == "Male"\) head\(hair\_eye\_male\)
+
+```text
+We will now write a data transformation function in R that takes `x`, `y`, `data` and `group` as inputs, and returns a data structure that when converted to JSON will match what we need. The basic idea behind `make_dataset` is to (a) rename the `x`, `y` columns to `name`, `value`, (b) split the `data` based on `group` and (c) convert each piece into a JSON array.
+
+
+```{r}
+data_to_json <- function(x, y, data, group = NULL){
+  require(plyr)
+  dat <- rename(data, setNames(c('name', 'value'), c(x, y)))
+  dat <- dat[c('name', 'value', group)]
+  if (!is.null(group)){
+    dlply(dat, group, toJSONArray, json = F)
+  } else {
+    list(main = toJSONArray(dat, json = F)) 
+  }
+}
+```
+
+You can run the code below to check that it produces the same `dataset` variable seen in the javascript above.
+
+\`\`\`{r results='hide'} dataset = data\_to\_json\('Hair', 'Freq', hair\_eye\_male, group = 'Eye'\) cat\(RJSONIO::toJSON\(dataset\)\)
+
+```text
+### Chart Creation
+
+It is now time to create the chart from R. We initialize the chart as an instance of `rCharts`, use the `setLib` method to point to the location of the library folder, and then pass the data payload using the `set` method. 
+
+```{r}
+library(rCharts)
+u1 <- rCharts$new()
+u1$setLib("uvcharts")
+u1$set(
+  type = 'Bar',
+  categories = names(dataset),
+  dataset = dataset,
+  dom = 'chart1'
+)
+u1
+```
+
+For the above code to work, you need to make sure that you have [downloaded](https://github.com/rcharts/howitworks/zipball/gh-pages) this repo, and are referring to the correct path to the `uvCharts` library.
+
+Alternately, you can point to the online version of the library `http://rcharts.github.io/howitworks/libraries/widgets/uvcharts` in `setLib`, and not have to download anything!!
+
+You could save all this code in an file named [myChart.R](https://github.com/mufitaltin/example/tree/43aeb3989e480a7643791dff84b0b225a1fde656/chapter2/assets/code/mychart.R) and then publish the chart along with the code by running the code below. The published chart can be seen [here](http://rcharts.io/viewer/?3b61ed669d7f15156520)
+
+For many libraries rCharts already simplifies the steps. Similarly, you can simplify the chart creation interface further, by wrapping everything into a `uPlot` function
+
+```text
+uPlot <- function(x, y, data, group = NULL, ...){
+  dataset = data_to_json(x = x, y = y, data = data, group = group)
+  u1 <- rCharts::rCharts$new()
+  u1$setLib("uvcharts")
+  u1$set(
+    categories = names(dataset),
+    dataset = dataset,
+    ...
+  )
+  return(u1)
+}
+```
+
+Let us create a `StackedBar` chart using `uPlot`
+
+\`\`\`{r stackedbar} uPlot\("Hair", "Freq", data = hair\_eye\_male, group = "Eye", type = 'StackedBar' \)
+
+\`\`\`
+
+So you can see for yourself, how easy it is to integrate a javascript visualization library into `rCharts`.
+
+The [uvCharts](http://imaginea.github.io/uvCharts/documentation.html) API provides more functionality to customize the chart. While, we can use nested lists with the `set` method to access this functionality, it would be cleaner to write custom methods that follow the unified interface and make things easier. We will go over this in Part 2 of this series.
+
+## Acknowledgements
+
+I would like to thank [TimelyPortfolio](http://github.com/timelyportfolio) for his valuable suggestions and comments, which helped improve this post.
+
+  
+ iframe.rChart{height: 500px;}  
+ p {  
+     text-align: justify;  
+     font-size: 16px;  
+     line-height: 24px;  
+     color: \#333333;  
+ }  
+
+
